@@ -15,4 +15,6 @@ optional arguments:
   -V, --version         show program's version number and exit
   -u NAME, --url NAME   URL of CSV file
   -r NAME, --region NAME
+                        Warning reagion. Can be nord or sud
+
 ```
