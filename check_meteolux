@@ -1,0 +1,92 @@
+#!/usr/bin/env python
+""" Check Meteolux weather warnings """
+
+import nagiosplugin
+import argparse
+import csv
+import urllib2
+import sys
+
+__version__ = '0.1.0'
+
+reload(sys)
+sys.setdefaultencoding('utf8')
+
+
+def getCSV(url, region):
+    response = urllib2.urlopen(url)
+    cr = csv.reader(response, delimiter=';')
+    for row in cr:
+        if "created" in row[0]:
+            result = "Last Update: " + row[1]
+        if region in row[0]:
+            result = result + "; State: " + row[1]
+        if "orag" in row[0]:
+            result = result + "; " + row[0] + ": " + row[3]
+
+    return result + "; Region: " + region
+
+
+class ForecastContext(nagiosplugin.Context):
+    def __init__(self, name, result_cls=nagiosplugin.result.Result):
+
+        super(ForecastContext, self).__init__(name, result_cls)
+
+    def evaluate(self, metric, resource):
+        if metric.value is None:
+            return self.result_cls(nagiosplugin.state.Unknown, None, metric)
+
+        if "green" in metric.value:
+            return self.result_cls(nagiosplugin.state.Ok, None, metric)
+        elif "yellow" in metric.value:
+            return self.result_cls(nagiosplugin.state.Warn, None, metric)
+        elif "red" in metric.value:
+            return self.result_cls(nagiosplugin.state.Critical, None, metric)
+        else:
+            return self.result_cls(nagiosplugin.state.Unknown, None, metric)
+
+
+class MeteoluxSummary(nagiosplugin.Summary):
+    def ok(self, results):
+        return results['forecast'].metric.value
+
+    def problem(self, results):
+        return results['forecast'].metric.value
+
+    def verbose(self, results):
+        return None
+
+
+@nagiosplugin.guarded
+class Meteolux(nagiosplugin.Resource):
+    def __init__(self, url, region):
+        self.url = url
+        self.region = region
+
+    def probe(self):
+        data = getCSV(self.url, self.region)
+        yield nagiosplugin.Metric('forecast', data)
+
+
+def main():
+    argp = argparse.ArgumentParser(description=__doc__)
+
+    argp.add_argument('-V', '--version', action='version',
+                      version=' '.join(['%(prog)s', __version__]))
+
+    argp.add_argument('-u', '--url', metavar='NAME', default='http://meteolux.lu/Opendata/data_alerts.csv',
+                      help='URL of CSV file')
+
+    argp.add_argument('-r', '--region', metavar='NAME', default='sud',
+                      help='Warning reagion. Can be nord or sud')
+
+    args = argp.parse_args()
+    check = nagiosplugin.Check(
+        Meteolux(args.url, args.region),
+        ForecastContext('forecast'),
+        MeteoluxSummary())
+
+    return check.main()
+
+if __name__ == '__main__':
+    main()
